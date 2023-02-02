@@ -1,0 +1,179 @@
+-- CLEANING DATA 
+Select *
+from DataCleaning.dbo.NashvilleHousing
+
+//-- STANDARIZING DATA FORMAT // 
+
+Select SaleDateConverted, CONVERT(Date, SaleDate)
+from DataCleaning..NashvilleHousing
+
+Update NashvilleHousing
+SET SaleDate = CONVERT(Date, SaleDate)
+
+ALTER TABLE NashvilleHousing 
+ADD SaleDateConverted Date;
+
+Update NashvilleHousing
+SET SaleDateConverted = CONVERT(Date, SaleDate)
+
+
+Select SaleDateConverted
+from DataCleaning..NashvilleHousing
+
+-- notes:
+-- 1. first we alter the table adding a new column 'SaleDateConverted', with the modified date format we want (placing 'Date' At the end, indicates the Format.
+-- 2. we update the table indicating what's the data in 'SaleDateConverted', in this case is the converted column of SaleDate) using function of CONVERT.
+-- 3. we select the table to verify the new changes.
+
+
+-- // Populate Property Address Data // 
+
+--Notes: some adresses have null values, some PARCELID are duplicated and has the info we are missing 
+Select *
+from DataCleaning..NashvilleHousing
+--where PropertyAddress is null
+order by ParcelID asc
+
+-- Making a joint within the same column, this would remove the duplicates
+-- We add an "AND" to indicate that is not the same row. Using the diferent "UNIQUEID"
+
+Select a.ParcelID, a.PropertyAddress, b.PropertyAddress, ISNULL(a.PropertyAddress, b.PropertyAddress)
+from DataCleaning..NashvilleHousing a
+JOIN DataCleaning..NashvilleHousing b
+	ON a.ParcelID = b.ParcelID
+	AND a.[UniqueID ] <> b.[UniqueID ]
+where a.PropertyAddress is null
+
+UPDATE a
+SET PropertyAddress = ISNULL(a.PropertyAddress, b.PropertyAddress)
+from DataCleaning..NashvilleHousing a
+JOIN DataCleaning..NashvilleHousing b
+	ON a.ParcelID = b.ParcelID
+	AND a.[UniqueID ] <> b.[UniqueID ]
+where a.PropertyAddress is null
+
+-- NOW WE DONT HAVE ANY NULL VALUES IN NASHVILLE HOUSING
+Select* from dataCleaning..NashvilleHousing
+where PropertyAddress is NULL
+
+-- //BREAKING OUT ADDRESS INTO INDIVIDUAL COLUMNS (ADDRESS CITY STATE)
+
+Select PropertyAddress
+from DataCleaning..NashvilleHousing
+
+SELECT 
+--	FIRST COLUMN WITH JUST THE ADDRESS 
+SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1) as Address
+
+-- SECOND COLUMN WITH CITY 
+,SUBSTRING(PropertyAddress,CHARINDEX(',', PropertyAddress) +1, LEN(PropertyAddress)) as 'City'
+from DataCleaning..NashvilleHousing
+
+-- we get rid of the 'coma', placing a -1 --
+
+
+-- NOW WE NEED TO UPDATE THE TABLE WITH THE NEW COLUMNS
+
+ALTER TABLE DataCleaning..NashvilleHousing
+add PropertySplitCity Nvarchar(255);
+
+UPDATE DataCleaning..NashvilleHousing 
+SET PropertySplitCity = SUBSTRING(PropertyAddress,CHARINDEX(',', PropertyAddress) +1, LEN(PropertyAddress))
+
+ALTER TABLE DataCleaning..NashvilleHousing
+add PropertySplitAddress Nvarchar(255);
+
+UPDATE DataCleaning..NashvilleHousing 
+SET PropertySplitAddress = SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1) 
+
+Select*
+from DataCleaning..NashvilleHousing
+
+-- FIXING OWNER ADDRESS COLUMN //ANOTHER METHOD//
+
+Select OwnerAddress 
+from DataCleaning..NashvilleHousing
+-- PERSENAME USE DOT TO SEPARATE, SO WE HAVE TO USE REPLACE METHOD COMA TO PERIOD
+Select
+PARSENAME(REPLACE(OwnerAddress, ',','.'),3),
+PARSENAME(REPLACE(OwnerAddress, ',','.'),2),
+PARSENAME(REPLACE(OwnerAddress, ',','.'),1)
+from DataCleaning..NashvilleHousing
+
+--ADDING THE COLUMNS 
+
+--ADDING FIRST COLUMN
+ALTER TABLE DataCleaning..NashvilleHousing
+add OwnerSplitAddress Nvarchar(255);
+
+UPDATE DataCleaning..NashvilleHousing 
+SET OwnerSplitAddress = PARSENAME(REPLACE(OwnerAddress, ',','.'),3)
+
+--ADDING SECOND COLUMN
+ALTER TABLE DataCleaning..NashvilleHousing
+add OwnerSplitCity Nvarchar(255);
+
+UPDATE DataCleaning..NashvilleHousing 
+SET OwnerSplitCity = PARSENAME(REPLACE(OwnerAddress, ',','.'),2)
+
+--ADDING THIRD COLUMN
+ALTER TABLE DataCleaning..NashvilleHousing
+add OwnerSplitState Nvarchar(255);
+
+UPDATE DataCleaning..NashvilleHousing 
+SET OwnerSplitState= PARSENAME(REPLACE(OwnerAddress, ',','.'),1)
+
+Select *
+from DataCleaning..NashvilleHousing
+
+-- // CHANGE Y AND N TO YES AND NO IN 'SOLD AS VACANT' COLUMN 
+
+--verify how many distinc values we have in this field
+Select Distinct(SoldAsVacant), COUNT(SoldAsVacant)
+from DataCleaning..NashvilleHousing
+group by SoldAsVacant
+
+-- as result there are 399 datas in N and 52 in Y
+
+Select SoldAsVacant
+, CASE When SoldAsVacant = 'Y' then 'Yes'
+	WHEN SoldAsVacant = 'N' then 'No'
+	ELSE SoldAsVacant 
+	END 
+From DataCleaning..NashvilleHousing
+
+UPDATE NashvilleHousing 
+SET SoldAsVacant = CASE When SoldAsVacant = 'Y' then 'Yes'
+	WHEN SoldAsVacant = 'N' then 'No'
+	ELSE SoldAsVacant 
+	END 
+From DataCleaning..NashvilleHousing
+
+-- //REMOVING DUPLICATES // 
+-- 1. LOOKING AT DUPLICATES
+WITH RowNumCTE AS (
+Select *,
+ ROW_NUMBER() OVER(
+ PARTITION BY ParcelId,
+              PropertyAddress,
+			  SalePrice,
+			  SaleDate,
+			  LegalReference
+			  Order by 
+				UniqueID
+				) row_num
+from DataCleaning..NashvilleHousing
+--order by ParcelID
+)
+SELECT *
+from RowNumCTE
+where row_num > 1
+--Order by propertyAddress
+
+-- //DELETE UNUSED COLUMNS // -- 
+
+Select *
+from DataCleaning..NashvilleHousing
+
+ALTER TABLE DataCleaning..NashvilleHousing
+DROP COLUMN OwnerAddress, TaxDistrict, PropertyAddress, SaleDate 
